@@ -1,0 +1,210 @@
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/rawdata")
+library("readxl")
+library(reshape2) 
+library("pheatmap")
+library("ggsci")
+library("RColorBrewer")
+library(qs)
+library("Seurat")
+int_flash<-qread("/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation_0614.qs")
+#highlight microglia
+Idents(int_flash)<-int_flash$celltype
+cell_names <-  WhichCells(int_flash, idents = c("Microglia"))
+microglia_umap<-DimPlot(object = int_flash, cells.highlight = cell_names, order = TRUE,pt.size=0.5)+ 
+  scale_color_manual(labels = c("Others", "Microglia"), values = c("grey", "black")) +
+  labs(color = "legend title")
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/subset/microglia/")
+ggsave(
+  filename = "UMAP_microglia_highlighted.tiff",
+  plot = microglia_umap,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+subcluster<-function(combine.combined,this_ct,resolution){
+  Idents(combine.combined)<-combine.combined$celltype
+  this_micro_obj <- subset(combine.combined, idents = this_ct)
+  DefaultAssay(this_micro_obj) <- "RNA"
+  this_micro_obj <- NormalizeData(this_micro_obj)
+  this_micro_obj <- FindVariableFeatures(this_micro_obj)
+  this_micro_obj <- ScaleData(this_micro_obj)
+  this_micro_obj <- RunPCA(this_micro_obj, verbose = FALSE)
+  this_micro_obj <- FindNeighbors(this_micro_obj, dims = 1:50)
+  this_micro_obj <- FindClusters(this_micro_obj, resolution = resolution)
+  this_micro_obj <- RunUMAP(this_micro_obj, reduction = "pca", dims = 1:50)
+  return(this_micro_obj)
+}
+microglia_flash<-subcluster(int_flash,"Microglia",1)
+a<-DimPlot(microglia_flash, label = TRUE, pt.size = 1.5,label.size = 8,group.by = "RNA_snn_res.1")
+ggsave(
+  filename = "UMAP_microglia_subset5.tiff",
+  plot = a,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+b<-DimPlot(microglia_flash, label = F, pt.size = 1.5,group.by = "timecondition",label.size = 6)
+ggsave(
+  filename = "UMAP_microglia_subset_conditions.tiff",
+  plot = b,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+c<-DimPlot(microglia_flash, label = F, pt.size = 1.5,group.by = "microbiota")
+ggsave(
+  filename = "UMAP_microglia_subset_microbiota.tiff",
+  plot = c,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+d<-DimPlot(microglia_flash, label = F, pt.size = 1.5,group.by = "spinalcord")
+ggsave(
+  filename = "UMAP_microglia_subset_spinalcord.tiff",
+  plot = d,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+DefaultAssay(microglia_flash)
+dot_microglia<-DotPlot(microglia_flash,features = c("P2ry12","Ier5","Cx3cr1","Csf1r","Fau","Uba52","Lgals1","Pf4","Clec7a","Lpl","Cst3","Selplg",
+                                     "Ctsd","Ctsz","Lyz2","Cd93","Fth1","Ftl1","Ifit3","Ifit1","H2-Ab1","H2-Aa"))+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+       axis.text = element_text(size=20))
+ggsave(
+  filename = "Dotplot_microglia_faithmarkers.tiff",
+  plot = dot_microglia,
+  device = "tiff",
+  width = 20,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#feature plot
+featureplot_microglia<-FeaturePlot(microglia_flash,features = features)
+ggsave(
+  filename = "featureplot_microglia_faithmarker.tiff",
+  plot = featureplot_microglia,
+  device = "tiff",
+  width = 20,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+
+#dotplot for sankowski
+features_sanko<-c("Tmem119","Hexb","Slc2a5","P2ry12","Siglech","Trem2","Mrc1","Cd163","Lyve1","Siglec1","Stab1","Pf4","Ms4a7",
+                  "Cbr2","Apoe")
+dot_microglia_sankowski<-DotPlot(microglia_flash,features = features_sanko)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+        axis.text = element_text(size=20))
+ggsave(
+  filename = "Dotplot_microglia_sankowskimarkers.tiff",
+  plot = dot_microglia_sankowski,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#DEG
+Idents(microglia_flash)<-microglia_flash$RNA_snn_res.1
+micro_clusterDEG<-FindAllMarkers(microglia_flash)
+micro_clusterDEG_f<-micro_clusterDEG[which(micro_clusterDEG$p_val_adj<0.05),]
+write.csv(micro_clusterDEG_f,"subcluster-specific-microglia_DEGs.csv")
+
+# pieplot
+Idents(microglia_flash)<-microglia_flash$timecondition
+microglia_flash_sccolonized <-  subset(microglia_flash, idents = c("SC_Colonized germ"))
+a<-DimPlot(object = microglia_flash_sccolonized ,pt.size=2,group.by = "RNA_snn_res.1")
+ggsave(
+  filename = "umap_microglia_condition1.tiff",
+  plot = a,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+microglia_flash_scicolonized <-  subset(microglia_flash, idents = c("SCI_Colonized germ"))
+b<-DimPlot(object = microglia_flash_scicolonized ,pt.size=2,group.by = "RNA_snn_res.1")
+ggsave(
+  filename = "umap_microglia_condition2.tiff",
+  plot = b,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+microglia_flash_scfree <-  subset(microglia_flash, idents = c("SC_Germ free"))
+c<-DimPlot(object = microglia_flash_scfree ,pt.size=2,group.by = "RNA_snn_res.1")
+ggsave(
+  filename = "umap_microglia_condition3.tiff",
+  plot = c,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+microglia_flash_scifree <-  subset(microglia_flash, idents = c("SCI_Germ free"))
+d<-DimPlot(object = microglia_flash_scifree ,pt.size=2,group.by = "RNA_snn_res.1")
+ggsave(
+  filename = "umap_microglia_condition4.tiff",
+  plot = d,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+qsave(microglia_flash,"/fs/ess/PCON0022/guoqi/microbe_sci/results/subset/microglia/microglia_subset_flashtalk.qs")
+
+pieplot_subset<-function(meta,fontsize){
+  pie_df = data.frame(table(meta$RNA_snn_res.1))
+  pie_df$Var1<-factor(pie_df$Var1,levels = sort(unique(microglia_flash$RNA_snn_res.1)))
+  colors <- c('#F8766D',"#A3A500",'#00BA38', '#00BFC4','#619CFF','#F564E3')
+  fig <-
+    plot_ly(
+      pie_df,
+      labels = ~ Var1,
+      values = ~ Freq,
+      type = 'pie',
+      marker = list(colors = colors, line = list(color = '#FFFFFF', width = 1)),
+      insidetextfont = list(color = '#000000'),
+      textinfo='label+percent'
+    )
+  fig <-
+    fig %>% layout(
+      title = paste0('Proportional distribution of five subsets in colonized germ spinal cord'),
+      xaxis = list(
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE
+      ),
+      yaxis = list(
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE
+      ),
+      font=list(size = fontsize, color = "black")
+    )
+  return(fig)
+}
+a<-pieplot_subset(microglia_flash_sccolonized@meta.data,20)
+b<-pieplot_subset(microglia_flash_scicolonized@meta.data,20)
+c<-pieplot_subset(microglia_flash_scfree@meta.data,20)
+d<-pieplot_subset(microglia_flash_scifree@meta.data,20)
