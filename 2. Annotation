@@ -1,69 +1,984 @@
-#heatmap
-annotation_heatmap_sub<-function(marker_f,object){
+#annotation using faith's markers
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/rawdata")
+library("readxl")
+library(reshape2) 
+library("pheatmap")
+library("ggsci")
+library("RColorBrewer")
+library(qs)
+library("Seurat")
+marker <- read_excel("faith_marker.xlsx", sheet = 1)
+draw_colnames_45 <- function (coln, gaps, ...) {
+  coord <- pheatmap:::find_coordinates(length(coln), gaps)
+  x     <- coord$coord - 0.5 * coord$size
+  res   <- grid::textGrob(
+    coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"),
+    vjust = 0.75, hjust = 1, rot = 42, gp = grid::gpar(...)
+  )
+  return(res)
+}
+assignInNamespace(
+  x = "draw_colnames",
+  value = "draw_colnames_45",
+  ns = asNamespace("pheatmap")
+)
+
+annotation_heatmap<-function(marker_f,object,clusterorder){
   library("Polychrome")
   marker_f<-melt(marker_f,measure.vars = colnames(marker_f),variable_name = "Celltype",value.name="marker")
   colnames(marker_f)<-c("Celltype","value")
   marker_f<-marker_f[!is.na(marker_f$value),]
   #compute average expression 
   avg_data<-data.frame(rep(0,nrow(marker_f)))
-  Idents(object)<-object$sub.cluster
   DefaultAssay(object)<-"RNA"
-  identical(object@assays$RNA@data,object@assays$RNA@counts)
-  for(i in sort(unique(object$sub.cluster))){
+  for(i in sort(unique(Idents(object)))){
     object_subset<-subset(object,idents=i)
     df<-AverageExpression(object_subset, assays = "RNA",features = marker_f$value, slot = "data")
     df<-as.data.frame(df$RNA)
     avg_data<-cbind(avg_data,df)
   }
   avg_data<-avg_data[,-1]
-  colnames(avg_data)<-sort(unique(object$sub.cluster))
+  colnames(avg_data)<-sort(unique(Idents(object)))
   #create pheatmap data
   marker_f$Celltype<-factor(marker_f$Celltype,levels = unique(marker_f$Celltype))
-  sample = data.frame(sample = marker_f$Celltype)
-  color = sample
-  levels(color) <- Polychrome::dark.colors(14)
-  color <- list(sample = levels(color))
-  names(color$sample)<- levels(sample$sample)
+  marker = data.frame(marker = marker_f$Celltype)
+  color = marker
+  levels(color) <- Polychrome::dark.colors(15)
+  color <- list(marker = levels(color))
+  names(color$marker)<- levels(marker$marker)
   separation_sequence <- cumsum(table(marker_f$Celltype))
   gaps_row = separation_sequence
-  p <- pheatmap(avg_data[,c("20","11_0","11_3","23","12_2","12_0","12_1","16","13","24","17","")],
+  p <- pheatmap(avg_data[,clusterorder],
                 color = colorRampPalette(c("blue","white","red"))(100),
                 cluster_rows = F,
-                annotation_row = sample,
+                annotation_row = marker,
                 annotation_colors = color,
                 cluster_cols = F,
                 scale = "row",border_color = "NA",
-                gaps_row = separation_sequence,fontsize = 15
+                gaps_row = separation_sequence,fontsize = 15,
+                annotation_names_row = F
   )
+  # p <- pheatmap(avg_data[],
+  #               color = colorRampPalette(c("blue","white","red"))(100),
+  #               cluster_rows = F,
+  #               annotation_row = sample,
+  #               annotation_colors = color,
+  #               cluster_cols = F,
+  #               scale = "row",border_color = "NA",
+  #               gaps_row = separation_sequence,fontsize = 15
+  # )
+
   return(p)
 }
 
-#cluster 11
-DefaultAssay(updated_temp)<-"RNA"
-updated_temp<-FindSubCluster(
-  updated_temp,
+Idents(temp)<-temp$clusters_f
+a<-annotation_heatmap(marker,temp,"seurat_clusters")
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation")
+ggsave(
+  filename = "heatmap_seuratclusters_original.tiff",
+  plot = a,
+  device = "tiff",
+  width = 13,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+# b<-annotation_heatmap_sub(marker_f,temp)
+# c<-annotation_heatmap_ct(marker_f,temp)
+DefaultAssay(temp)<-"RNA"
+marker_f<-melt(marker,measure.vars = colnames(marker_f),variable_name = "Celltype",value.name="marker")
+p<-DotPlot(temp,features=marker_f$marker)+ RotatedAxis()
+ggsave(
+  filename = "dotplot_seuratclusters_faithoriginal.tiff",
+  plot = p,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+#output featureplot and violin plot for each gene
+visua_ct<-function(object,marker,ctname){
+  #featureplot
+  featureplot<-FeaturePlot(object, features = marker)
+  ggsave(
+    filename = paste0("featureplot_",ctname,".tiff"),
+    plot = featureplot,
+    device = "tiff",
+    width = 15,
+    height = 10,
+    units = "in",
+    dpi = 150
+  )
+  violin<-VlnPlot(object, features =marker)
+  ggsave(
+    filename = paste0("violinplot_",ctname,".tiff"),
+    plot = violin,
+    device = "tiff",
+    width = 15,
+    height = 10,
+    units = "in",
+    dpi = 150
+  )
+}
+marker<-as.data.frame(marker)
+for(i in 1:14){
+  visua_ct(temp,as.character(marker[,i]),colnames(marker)[i])
+}
+
+
+#annotate most of cell types
+temp$celltype[which(temp$clusters_f=="21")]<-colnames(marker)[2]
+temp$celltype[which(temp$clusters_f=="20")]<-colnames(marker)[2]
+temp$celltype[which(temp$clusters_f=="14")]<-colnames(marker)[3]
+temp$celltype[which(temp$clusters_f=="12")]<-colnames(marker)[4]
+temp$celltype[which(temp$clusters_f=="19")]<-colnames(marker)[4]
+temp$celltype[which(temp$clusters_f=="15")]<-colnames(marker)[5]
+temp$celltype[which(temp$clusters_f=="4")]<-colnames(marker)[6]
+temp$celltype[which(temp$clusters_f=="13")]<-colnames(marker)[8]
+temp$celltype[which(temp$clusters_f=="1")]<-colnames(marker)[9]
+temp$celltype[which(temp$clusters_f=="3")]<-colnames(marker)[9]
+temp$celltype[which(temp$clusters_f=="8")]<-colnames(marker)[9]
+temp$celltype[which(temp$clusters_f=="16")]<-colnames(marker)[9]
+temp$celltype[which(temp$clusters_f=="6")]<-colnames(marker)[10]
+temp$celltype[which(temp$clusters_f=="18")]<-colnames(marker)[2]
+temp$celltype[which(temp$clusters_f=="0")]<-colnames(marker)[11]
+temp$celltype[which(temp$clusters_f=="2")]<-colnames(marker)[11]
+temp$celltype[which(temp$clusters_f=="10")]<-colnames(marker)[11]
+temp$celltype[which(temp$clusters_f=="5")]<-"T cells"
+temp$celltype[which(temp$clusters_f=="9")]<-"T cells"
+
+
+#-------------------------------------cluster annotation for clusters that are difficult to distinguish
+
+temp$celltype[which(temp1$sub.cluster_17=="17_2")]<-colnames(marker)[13]
+temp$celltype[which(temp1$sub.cluster_17=="17_1")]<-colnames(marker)[7]
+temp$celltype[which(temp1$sub.cluster_17=="17_0")]<-colnames(marker)[7]
+temp$celltype[which(temp$sub.cluster7=="7_0")]<-colnames(marker)[1]
+temp$celltype[which(temp$sub.cluster7=="7_1")]<-colnames(marker)[1]
+temp$celltype[which(temp$sub.cluster7=="7_3")]<-colnames(marker)[1]
+temp$celltype[which(temp$sub.cluster7=="7_4")]<-colnames(marker)[12]
+temp$celltype[which(temp$sub.cluster7=="7_2_0")]<-colnames(marker)[12]
+temp$celltype[which(temp$sub.cluster7=="7_2_1")]<-colnames(marker)[1]
+temp$celltype[which(temp$subcluster_f=="11_2")]<-colnames(marker)[2]
+temp$celltype[which(temp$subcluster_f=="11_3")]<-colnames(marker)[2]
+temp$celltype[which(temp$subcluster_f=="11_0")]<-colnames(marker)[2]
+temp$celltype[which(temp$subcluster_f=="11_1")]<-colnames(marker)[2]
+# temp$celltype[which(temp$subcluster_f=="11_0")]<-"Monocytes & B cells"
+# temp$celltype[which(temp$subcluster_f=="11_1")]<-"Monocytes & B cells"
+
+meta<-temp@meta.data
+meta<-meta[,-c(17:18)]
+temp@meta.data<-meta
+qsave(temp,"/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation.qs")
+temp<-qread("/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation.qs")
+temp$timecondition <- paste(temp$spinalcord, temp$microbiota, sep = "_")
+
+#-----------------cluster 17
+#subcluster 17
+Idents(temp)<-temp$clusters_f
+temp<-FindSubCluster(
+  temp,
+  "17",
+  "integrated_snn",
+  subcluster.name = "sub.cluster",
+  resolution = 0.5,
+  algorithm = 1
+)
+Idents(temp)<-temp1$sub.cluster
+p17<-DimPlot(temp, reduction = "umap", group.by = "sub.cluster_17",label = T)
+ggsave(
+  filename = "umap_subclusters17.tiff",
+  plot = p17,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#feature plot
+#pericytes and leptomeni
+marker_f$`Leptomeningeal cells`[1]
+lep_markers_new<-c("Col1a1",marker_f$`Leptomeningeal cells`[-3],"Dcn")
+lep_markers_old<-c(marker_f$`Leptomeningeal cells`)
+FeaturePlot(temp, features = lep_markers_old)
+FeaturePlot(temp, features = lep_markers_new)
+peri_markers_old<-c(marker_f$Pericytes)
+peri_markers_new<-c(marker_f$Pericytes[-1],"Pdgfrb")
+FeaturePlot(temp, features = peri_markers_new)
+#dotplot
+temp$sub.cluster_17<-temp$sub.cluster
+temp$subcluster_17<-factor(temp$subcluster_17,levels = c("7","11","18","14","12","19","15","4","17_0","17_1","17_2","13","1","3","8","16","6","0","2","10","5","9"))
+Idents(temp)<-temp$sub.cluster
+dotplot_subcluster17_original<-DotPlot(temp, features = c(marker$`Leptomeningeal cells`,marker$Pericytes))
+ggsave(
+  filename = "dotplot_subcluster17_original.tiff",
+  plot = dotplot_subcluster17_original,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+DefaultAssay(temp)<-"RNA"
+markers_f$marker[19]<-"Dcn"
+markers_f$marker[21]<-"Col1a1"
+markers_f$marker[37]<-"Pdgfrb"
+markers_f$marker[38]<-"Cspg4"
+dotplot_sub17_sciatlasmarkers<-DotPlot(temp, features = c(markers_f$marker[c(19:21,37:39)],"Atp13a5"))
+ggsave(
+  filename = "./validation/dotplot_sub17_sciatlasmarkers.tiff",
+  plot = dotplot_sub17_sciatlasmarkers,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+levels(markers_f$value)
+Idents(immune.combined) <- factor(temp1$sub.cluster, levels = sort(unique(temp1$sub.cluster)))
+marker_f$`Leptomeningeal cells`<-markers_f$marker[19:21]
+marker_f$Pericytes<-markers_f$marker[37:39]
+#violin plot
+Idents(temp)<-temp$sub.cluster_17
+vln_17<-VlnPlot(temp, features = c(marker$`Leptomeningeal cells`,marker$Pericytes))
+ggsave(
+  filename = "./validation/violinplot_subcluster17_originalmarkers.tiff",
+  plot = vln_17,
+  device = "tiff",
+  width = 17,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+#cluster 7
+temp<-FindSubCluster(
+  temp,
+  "7",
+  "integrated_snn",
+  subcluster.name = "sub.cluster7",
+  resolution = 0.5,
+  algorithm = 1
+)
+DotPlot(temp, features = c(markers_f$marker[c(1:3,34:36)],"Agt","Slc7a10","Gfap","Tnr","Fyn","Tcf7l2","Mag","Mog","Plp1"))
+FeaturePlot(temp, features = c(marker$Astrocytes,marker$`Oligodendrocyte lineage`))
+#we found 7_2 still difficult to distinguish
+
+temp<-FindSubCluster(
+  temp,
+  "7_2",
+  "integrated_snn",
+  subcluster.name = "sub.cluster7",
+  resolution = 0.5,
+  algorithm = 1
+)
+p7 <- DimPlot(temp, reduction = "umap", group.by = "sub.cluster7",label = T, label.size = 3)
+ggsave(
+  filename = "umap_int_subclusters7.tiff",
+  plot = p7,
+  device = "tiff",
+  width = 10,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#show dotplot
+Idents(temp)<-temp$sub.cluster7
+temp$sub.cluster7<-factor(temp$sub.cluster7,c(levels(Idents(temp))[1:19],"16","20","7_4","7_2_0","7_0","7_1","7_3","7_2_1"))
+Idents(temp)<-temp$sub.cluster7
+dot7<-DotPlot(temp, features = c(markers_f$marker[c(1:3,34:36)]))
+ggsave(
+  filename = "dotplot_subclusters7.tiff",
+  plot = dot7,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#violin plot
+Idents(temp)<-temp$sub.cluster7
+violin_7<-VlnPlot(temp,features = c(marker$Astrocytes,marker$`Oligodendrocyte lineage`))
+ggsave(
+  filename = "violinplot_subclusters7.tiff",
+  plot = violin_7,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#validation using other markers
+Idents(temp)<-temp$sub.cluster
+DotPlot(temp, features = c(markers_f$marker[c(1:3,34:36)],"Agt","Slc7a10","Gfap","Tnr","Fyn","Tcf7l2","Mag","Olig2","Plp1"))
+#we found that 7_2_0 does not have high expression of astrocyte, so annotate 7_2_0 to oligodendrocyte lineage and 7_2_1 as astrocyte
+
+
+# cluster 11
+DimPlot(temp, reduction = "umap", group.by = "celltype",label = T, label.size = 3)
+Idents(temp)<-temp$clusters_f
+temp<-FindSubCluster(
+  temp,
   "11",
   "integrated_snn",
-  subcluster.name = "sub.cluster",
+  subcluster.name = "sub.cluster11",
   resolution = 0.5,
   algorithm = 1
 )
-Idents(updated_temp)<-updated_temp$sub.cluster
-DotPlot(updated_temp, features = c(markers_f$marker[c(1:3,34:36)],"Agt","Slc7a10","Gfap","Tnr","Fyn","Tcf7l2","Mag","Mog","Plp1"))
-DimPlot(updated_temp, reduction = "umap", group.by = "sub.cluster",label = T)
+p11<-DimPlot(temp, reduction = "umap", group.by = "sub.cluster11",label = T, label.size = 3)
+ggsave(
+  filename = "umap_subclusters11.tiff",
+  plot = p11,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+temp$sub.cluster11<-factor(temp$sub.cluster11,levels=c(levels(temp$clusters_f)[-12],"11_2","11_3","11_0","11_1"))
+Idents(temp)<-temp$sub.cluster11
+dot_11<-DotPlot(temp,features = c(marker$`B cells`,marker$Monocytes))
+ggsave(
+  filename = "dotplot_subclusters11.tiff",
+  plot = dot_11,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
 
-b<-annotation_heatmap_sub(marker_f,updated_temp)
-#cluster 12 (B cell or Monocyte)
-DefaultAssay(updated_temp)<-"RNA"
-updated_temp<-FindSubCluster(
-  updated_temp,
-  "12",
-  "integrated_snn",
-  subcluster.name = "sub.cluster",
-  resolution = 0.5,
-  algorithm = 1
+Idents(temp)<-temp$clusters_f
+DotPlot(temp,features = c("Vpreb3","S100a6","Ahnak","Trf","Itgb5","Cd68","Csf1r","Cd44"))
+DotPlot(temp,features = c("Ccr2","H2-Aa","Ly6d","Cd74","Ms4a1","Cd19"))
+#b_dotplot<-DotPlot(temp,features = c("Ccr2","Ighm","Cd19","Ly6d","Cd79a"))
+monocyte_dotplot<-DotPlot(temp,features = c("Ccr2","Ly6c2","Anxa8","Plac8","Nr4a1","Ly6d","Cd79a","Cd79b"))
+ggsave(
+  filename = "dotplot_Bcell_Monocyte_othermarkers.tiff",
+  plot = monocyte_dotplot,
+  device = "tiff",
+  width = 17,
+  height = 10,
+  units = "in",
+  dpi = 150
 )
-Idents(updated_temp)<-updated_temp$seurat_clusters
-DotPlot(updated_temp, features = c(marker_f$`B cells`,"Cd74",marker_f$Monocytes,"Ccr2","Cx3cr1"))
-DimPlot(updated_temp, reduction = "umap", group.by = "sub.cluster",label = T)
-FeaturePlot(updated_temp, features = c(marker_f$`B cells`,marker_f$Monocytes,"Ccr2"))
+
+
+# check whether cluster 10 belongs to neutrophils?????
+FeaturePlot(temp,features = marker_f$`B cells`)
+Idents(temp)<-temp$celltype
+DotPlot(temp,features = marker_f$`B cells`)
+# check why b cell separate
+DimPlot(temp, reduction = "umap", group.by = "seurat_clusters",label = T)
+
+
+#heatmap for all clusters
+temp$subcluster_f<-temp$clusters_f
+temp$subcluster_f<-as.character(temp$subcluster_f)
+temp$subcluster_f[grep(temp$sub.cluster7,pattern = "7_")]<-as.character(temp$sub.cluster7[grep(temp$sub.cluster7,pattern = "7_")])
+temp$subcluster_f[grep(temp$sub.cluster_17,pattern = "17_")]<-as.character(temp$sub.cluster_17[grep(temp$sub.cluster_17,pattern = "17_")])
+temp$subcluster_f[grep(temp$sub.cluster11,pattern = "11_")]<-as.character(temp$sub.cluster11[grep(temp$sub.cluster11,pattern = "11_")])
+Idents(temp)<-temp$subcluster_f
+clusterorder<-c("7_0","7_1","7_3","7_2_1","11_0","11_1","11_2","21","20","14","12","19","15","4","17_0","17_1","13","1","3","8","16","6","18","0","2","10","7_4","7_2_0","17_2","5","9")
+heatmap_all<-annotation_heatmap(temp,marker_f = marker,clusterorder)
+ggsave(
+  filename = "heatmap_subclusters_faith.tiff",
+  plot = heatmap_all,
+  device = "tiff",
+  width = 10,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+#new markers
+markers<-marker
+markers$`Leptomeningeal cells`<-c("Dcn","Igfbp6","Col1a1")
+markers$Pericytes<-c("Pdgfrb","Cspg4","Vtn")
+heatmap_all_newmarker<-annotation_heatmap(temp,marker_f = markers,clusterorder)
+ggsave(
+  filename = "heatmap_subclusters_faithsciatlas.tiff",
+  plot = heatmap_all_newmarker,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+#microglia cluster 16
+Idents(temp)<-temp$clusters_f
+dotplot_microglia<-DotPlot(temp,features = c(marker$Microglia,"Hexb","Slc2a5","Trem2"))
+ggsave(
+  filename = "dotplot_Microglia_othermarkers.tiff",
+  plot = dotplot_microglia,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+
+# output draft1 results
+cellannotation<-DimPlot(temp, reduction = "umap", group.by = "celltype",label = T,label.size = 6)
+ggsave(
+  filename = "annotation_draft1.tiff",
+  plot = cellannotation,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+Idents(temp)<-temp$celltype
+heatmap_all_originalmarker_ct<-annotation_heatmap(temp,marker_f = marker,sort(unique(temp$celltype)))
+ggsave(
+  filename = "heatmap_ct_faith.tiff",
+  plot = heatmap_all_originalmarker_ct,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+
+heatmap_all_newmarker_ct<-annotation_heatmap(temp,marker_f = markers,sort(unique(temp$celltype)))
+ggsave(
+  filename = "heatmap_ct_faithsciatlas.tiff",
+  plot = heatmap_all_newmarker_ct,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+Idents(temp)<-factor(temp$celltype,levels=sort(unique(temp$celltype)))
+dot_ct_faithsciatlas<-DotPlot(temp,features = markers_f$marker)+theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+                                                                      axis.text = element_text(size=20))
+ggsave(
+  filename = "dotplot_ct_faithsciatlas.tiff",
+  plot = dot_ct_faithsciatlas,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+ggsave(
+  filename = "dotplot_ct_faithsciatlas.tiff",
+  plot = dot_ct_faithsciatlas,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+dot_ct_faith<-DotPlot(temp,features = marker_f$marker)+theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+                                                                      axis.text = element_text(size=20))
+ggsave(
+  filename = "dotplot_ct_faith.tiff",
+  plot = dot_ct_faith,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+# annotation draft2
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version2/")
+cellannotation<-DimPlot(temp, reduction = "umap", group.by = "celltype",label = T,label.size = 6,cols = my_cols,pt.size=1.4)
+ggsave(
+  filename = "annotation_draft2.tiff",
+  plot = cellannotation,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+heatmap_all_originalmarker_ct2<-annotation_heatmap(temp,marker_f = marker,sort(unique(temp$celltype)))
+ggsave(
+  filename = "heatmap_ct2_faith.tiff",
+  plot = heatmap_all_originalmarker_ct2,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+temp$celltype<-factor(temp$celltype,levels = sort(unique(temp$celltype),decreasing = T))
+Idents(temp)<-temp$celltype
+dot_ct2_faith<-DotPlot(temp,features = marker_f$value)+theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+                                                             axis.text = element_text(size=20))
+ggsave(
+  filename = "dotplot_ct2_faith.tiff",
+  plot = dot_ct2_faith,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+#---------------lable transfer
+setwd("/fs/ess/PCON0022/guoqi/Integration_spinal_cord/Raw_data_object/Popovich_lab/Single_cell_Faith")
+library(qs)
+library(Seurat)
+faith<-qread("faith_final_data.qs")
+DefaultAssay(faith)<-"integrated"
+DimPlot(faith, reduction = "umap",label=T,group.by="celltype")
+sci_integrate_query <- FindClusters(sci_integrate, resolution = 0.3)
+transfer_anchors <- FindTransferAnchors(reference = faith, query = sci_integrate_query,
+                                        dims = 1:30, reference.reduction = "pca")
+predictions <- TransferData(anchorset = transfer_anchors, refdata = faith$celltype,
+                            dims = 1:30)
+sci_integrate_query <- AddMetaData(sci_integrate_query
+                              , metadata = predictions)
+transferedmeta<-sci_integrate_query@meta.data
+temp$predictedct<-sci_integrate_query$predicted.id
+label_transfer<-DimPlot(temp, reduction = "umap", group.by = "predictedct",label = T,label.size = 6)
+ggsave(
+  filename = "umap_ct_transferprediction.tiff",
+  plot = label_transfer,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+#cluster 10 changing markers
+setwd(".")
+adpgk<-VlnPlot(temp,features = c("S100a9","Retnlg","Adpgk"))
+ggsave(
+  filename = paste0("violinplot_Neutrophil_newmarker",".tiff"),
+  plot = adpgk,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+adpgk_feature<-FeaturePlot(temp,features = c("S100a9","Retnlg","Adpgk"))
+ggsave(
+  filename = paste0("featureplot_Neutrophil_newmarker",".tiff"),
+  plot = adpgk_feature,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+# barplot
+temp$celltype<-factor(temp$celltype,levels = sort(unique(temp$celltype),decreasing = T))
+cell.prop<-as.data.frame(prop.table(table(temp$celltype, temp$timecondition),2))
+colnames(cell.prop)<-c("cluster","Condition","Proportion")
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))
+library("RColorBrewer")
+paired<-brewer.pal(n = 12, name = "Paired")
+#paired[11]<-"#8B8000
+my_cols<-c(paired,"#3C5488B2","#666666")
+p=p+scale_fill_manual(values=my_cols)
+ggsave(
+  filename = paste0("Celltype_proportion",".tiff"),
+  plot = p,
+  device = "tiff",
+  width = 10,
+  height = 12,
+  units = "in",
+  dpi = 150
+)
+
+#Jun 12
+Idents(int_flash)<-int_flash$clusters_f
+VlnPlot(int_flash,c("Ly6g",marker$Neutrophils,"Adpgk"))
+#cluster 16 is not the Megakaryocyte
+VlnPlot(int_flash,c("Plk3","Syp","Prox1"))
+
+temp2<-temp
+temp2$celltype[which(temp2$clusters_f=="16")]<-"Neutrophils"
+temp2$subct<-as.character(temp2$celltype)
+temp2$subct[which(temp2$clusters_f=="16")]<-"Neutrophil-platelet aggregates"
+qsave(temp2,"/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation_0612.qs")
+Idents(temp2)<-temp2$clusters_f
+naps<-VlnPlot(temp2,features = c("Nrgn","Ppbp","Pf4","P2ry12", "Clec1b","Gp9"))
+ggsave(
+  filename = paste0("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_cluster16NAPs/violinplot_NAPs_cluster16",".tiff"),
+  plot = naps,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+naps_feature<-FeaturePlot(temp2,features = c("Nrgn","Ppbp","Pf4","P2ry12", "Clec1b","Gp9"))
+ggsave(
+  filename = paste0("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_cluster16NAPs/featureplot_cluster16_NAPs",".tiff"),
+  plot = naps_feature,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+# annotation draft3
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_cluster16NAPs")
+paired[11]<-"#B09C85FF"
+my_cols<-c(paired,"#3C5488B2","#666666")
+cellannotation_3<-DimPlot(temp2, reduction = "umap", group.by = "celltype",label = T,label.size = 6,cols = my_cols,pt.size=1.4)
+ggsave(
+  filename = "annotation_draft3.tiff",
+  plot = cellannotation_3,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+Idents(temp2)<-temp2$celltype
+heatmap_all_originalmarker_ct3<-annotation_heatmap(temp2,marker_f = marker,sort(unique(temp2$celltype)))
+ggsave(
+  filename = "heatmap_ct3_faith.tiff",
+  plot = heatmap_all_originalmarker_ct3,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+temp2$celltype<-factor(temp2$celltype,levels = sort(unique(temp2$celltype),decreasing = T))
+Idents(temp2)<-temp2$celltype
+dot_ct3_faith<-DotPlot(temp2,features = marker_f$marker)+theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+                                                             axis.text = element_text(size=20))
+ggsave(
+  filename = "dotplot_ct3_faith.tiff",
+  plot = dot_ct3_faith,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+# barplot
+temp2$celltype<-factor(temp2$celltype,levels = sort(unique(temp$celltype),decreasing = F))
+cell.prop<-as.data.frame(prop.table(table(temp2$celltype, temp2$timecondition),2))
+colnames(cell.prop)<-c("cluster","Condition","Proportion")
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))
+
+p=p+scale_fill_manual(values=my_cols)
+ggsave(
+  filename = paste0("Celltype_proportion_3",".tiff"),
+  plot = p,
+  device = "tiff",
+  width = 10,
+  height = 12,
+  units = "in",
+  dpi = 150
+)
+
+# Jun 14  annotate cluster 16 as Platelets
+temp3<-int_flash
+temp3$celltype<-as.character(temp3$celltype)
+temp3$celltype[which(temp3$clusters_f=="16")]<-"Platelets"
+temp3$subct[which(temp3$clusters_f=="16")]<-"Platelets"
+qsave(temp3,"/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation_0614.qs")
+temp3<-qread("/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation_0614.qs")
+Idents(temp3)<-temp3$clusters_f
+cluster16_neutrophil<-VlnPlot(temp3,c("Ly6g",marker$Neutrophils,"Adpgk"))
+ggsave(
+  filename = paste0("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_cluster16NAPs/violinplot_neutrophilmarker_cluster16",".tiff"),
+  plot = cluster16_neutrophil,
+  device = "tiff",
+  width = 15,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+# annotation draft4
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_cluster16NAPs")
+paired<-brewer.pal(n = 12, name = "Paired")
+paired[11]<-"#B09C85FF"
+my_cols<-c(paired,"#3C5488B2","#FFFF99","#666666")
+#MYCOLS
+my_cols<-c(paired,"#3C5488B2","#E6E606","#666666")
+temp3$celltype<-factor(temp3$celltype,levels = sort(unique(temp3$celltype)))
+cellannotation_3<-DimPlot(temp3, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+ggsave(
+  filename = "annotation_draft4_16platelets.tiff",
+  plot = cellannotation_3,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+pdf(
+  "annotation_draft4_16platelets.pdf",
+  width = 12,
+  height = 10,
+  bg = "white" ,
+  colormodel = "cmyk"
+)  # Color model (cmyk is required for most publications)
+#paper = "A4")          # Paper size
+# Creating a plot
+cellannotation_3
+# Closing the graphical device
+dev.off()
+marker$Platelets<-c("Nrgn","Ppbp","Pf4")
+markera<-cbind(marker[,1:13],marker[,15],marker[,14])
+Idents(temp3)<-temp3$celltype
+heatmap_plate<-annotation_heatmap(temp3,marker_f = markera,sort(unique(temp3$celltype)))
+ggsave(
+  filename = "heatmap_ct_plate.tiff",
+  plot = heatmap_plate,
+  device = "tiff",
+  width = 12,
+  height = 15,
+  units = "in",
+  dpi = 150
+)
+temp3$celltype<-factor(temp3$celltype,levels = sort(unique(temp3$celltype),decreasing = T))
+Idents(temp3)<-temp3$celltype
+dot_ct_plate<-DotPlot(temp3,features = marker_f$value)+theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+                                                               axis.text = element_text(size=20))
+ggsave(
+  filename = "dotplot_ct_faith_plate.tiff",
+  plot = dot_ct_plate,
+  device = "tiff",
+  width = 25,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+# barplot
+temp3$celltype<-factor(temp3$celltype,levels = sort(unique(temp3$celltype),decreasing = T))
+temp3$timecondition[which(temp3$timecondition=="SC_Colonized germ")]<-"Colonized naive"
+temp3$timecondition[which(temp3$timecondition=="SC_Germ free")]<-"GF-naive"
+temp3$timecondition[which(temp3$timecondition=="SCI_Colonized germ")]<-"Colonized-SCI"
+temp3$timecondition[which(temp3$timecondition=="SCI_Germ free")]<-"GF-SCI"
+temp3$timecondition<-factor(temp3$timecondition,levels = c('GF-naive','Colonized naive','GF-SCI','Colonized-SCI'))
+
+Idents(temp3)<-temp3$celltype
+cell.prop<-as.data.frame(prop.table(table(temp3$celltype, temp3$timecondition),2))
+colnames(cell.prop)<-c("cluster","Condition","Proportion")
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))+ 
+  theme(axis.text = element_text(size = 20),text = element_text(size = 20),
+        axis.text.x = element_text( size=18,angle = 30,vjust=1, hjust=1))   
+
+p=p+scale_fill_manual(values=my_cols)
+ggsave(
+  filename = paste0("Celltype_proportion_plate",".tiff"),
+  plot = p,
+  device = "tiff",
+  width = 10,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+#cell type proportion of microglia
+meta<-temp3@meta.data
+p<-pieplot(meta,"Microglia",32)
+pieplot<-function(meta,celltypename,fontsize){
+  pie_df <-
+    meta %>%
+    filter(celltype %in% celltypename)
+  pie_df = data.frame(table(pie_df$timecondition))
+  #pie_df$Var1<-factor(pie_df$Var1,levels = c("SC_Colonized germ","SC_Germ free","SCI_Colonized germ","SCI_Germ free"))
+  colors <- c("#4DBBD5B2",'#00A087B2','#DC0000B2','#E64B35B2')
+  fig <-
+    plot_ly(
+      pie_df,
+      labels = ~ Var1,
+      values = ~ Freq,
+      type = 'pie',
+      marker = list(colors = colors, line = list(color = '#FFFFFF', width = 1)),
+      insidetextfont = list(color = '#000000'),
+      textinfo='label+percent'
+    )
+  fig <-
+    fig %>% layout(
+      title = paste0('Proportional distribution of ',celltypename," across four conditions"),
+      xaxis = list(
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE
+      ),
+      yaxis = list(
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE
+      ),
+     font=list(size = fontsize, color = "black")
+    )
+  return(fig)
+}
+
+#-------------neutrophils question
+#barplot for faith'data
+setwd("/fs/ess/PCON0022/guoqi/Integration_spinal_cord/Raw_data_object/Popovich_lab/Single_cell_Faith")
+faith<-qread("./faith_final_data.qs")
+faith$celltype<-as.character(faith$celltype)
+faith$celltype<-factor(faith$celltype,levels = sort(unique(faith$celltype),decreasing = F))
+Idents(faith)<-faith$celltype
+cell.prop<-as.data.frame(prop.table(table(faith$celltype, faith$orig.ident),2))
+colnames(cell.prop)<-c("cluster","Condition","Proportion")
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))+ 
+  theme(axis.text = element_text(size = 20),text = element_text(size = 20),
+        axis.text.x = element_text( size=18,angle = 30,vjust=1, hjust=1))   
+p=p+scale_fill_manual(values=my_cols[-14])
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Jun30")
+ggsave(
+  filename = paste0("Celltype_proportion_faithdata",".tiff"),
+  plot = p,
+  device = "tiff",
+  width = 12,
+  height = 10,
+  units = "in",
+  dpi = 150
+)
+
+# annotation_heatmap_sub<-function(marker_f,object){
+#   library("Polychrome")
+#   marker_f<-melt(marker_f,measure.vars = colnames(marker_f),variable_name = "Celltype",value.name="marker")
+#   colnames(marker_f)<-c("Celltype","value")
+#   marker_f<-marker_f[!is.na(marker_f$value),]
+#   #compute average expression 
+#   avg_data<-data.frame(rep(0,nrow(marker_f)))
+#   Idents(object)<-object$sub.cluster
+#   DefaultAssay(object)<-"RNA"
+#   identical(object@assays$RNA@data,object@assays$RNA@counts)
+#   for(i in sort(unique(object$sub.cluster))){
+#     object_subset<-subset(object,idents=i)
+#     df<-AverageExpression(object_subset, assays = "RNA",features = marker_f$value, slot = "data")
+#     df<-as.data.frame(df$RNA)
+#     avg_data<-cbind(avg_data,df)
+#   }
+#   avg_data<-avg_data[,-1]
+#   colnames(avg_data)<-sort(unique(object$sub.cluster))
+#   #create pheatmap data
+#   marker_f$Celltype<-factor(marker_f$Celltype,levels = unique(marker_f$Celltype))
+#   sample = data.frame(sample = marker_f$Celltype)
+#   color = sample
+#   levels(color) <- Polychrome::dark.colors(14)
+#   color <- list(sample = levels(color))
+#   names(color$sample)<- levels(sample$sample)
+#   separation_sequence <- cumsum(table(marker_f$Celltype))
+#   gaps_row = separation_sequence
+#   p <- pheatmap(avg_data[,sort(unique(object$sub.cluster))],
+#                 color = colorRampPalette(c("blue","white","red"))(100),
+#                 cluster_rows = F,
+#                 annotation_row = sample,
+#                 annotation_colors = color,
+#                 cluster_cols = F,
+#                 scale = "row",border_color = "NA",
+#                 gaps_row = separation_sequence,fontsize = 15
+#   )
+#   return(p)
+# }
+# annotation_heatmap_ct<-function(marker_f,object){
+#   library("Polychrome")
+#   marker_f<-melt(marker_f,measure.vars = colnames(marker_f),variable_name = "Celltype",value.name="marker")
+#   colnames(marker_f)<-c("Celltype","value")
+#   marker_f<-marker_f[!is.na(marker_f$value),]
+#   #compute average expression 
+#   avg_data<-data.frame(rep(0,nrow(marker_f)))
+#   Idents(object)<-object$celltype
+#   DefaultAssay(object)<-"RNA"
+#   identical(object@assays$RNA@data,object@assays$RNA@counts)
+#   for(i in sort(unique(object$celltype))){
+#     object_subset<-subset(object,idents=i)
+#     df<-AverageExpression(object_subset, assays = "RNA",features = marker_f$value, slot = "data")
+#     df<-as.data.frame(df$RNA)
+#     avg_data<-cbind(avg_data,df)
+#   }
+#   avg_data<-avg_data[,-1]
+#   colnames(avg_data)<-sort(unique(object$celltype))
+#   #create pheatmap data
+#   marker_f$Celltype<-factor(marker_f$Celltype,levels = unique(marker_f$Celltype))
+#   sample = data.frame(sample = marker_f$Celltype)
+#   color = sample
+#   levels(color) <- Polychrome::dark.colors(14)
+#   color <- list(sample = levels(color))
+#   names(color$sample)<- levels(sample$sample)
+#   separation_sequence <- cumsum(table(marker_f$Celltype))
+#   gaps_row = separation_sequence
+#   # p <- pheatmap(avg_data[,c("7","11","18","14","12","19","15","4","17_0","17_1","17_2","13","1","3","8","16","6","0","2","10","5","9")],
+#   #               color = colorRampPalette(c("blue","white","red"))(100),
+#   #               cluster_rows = F,
+#   #               annotation_row = sample,
+#   #               annotation_colors = color,
+#   #               cluster_cols = F,
+#   #               scale = "row",border_color = "NA",
+#   #               gaps_row = separation_sequence,fontsize = 15
+#   # )
+#   p <- pheatmap(avg_data[,  sort(unique(object$celltype))],
+#                 color = colorRampPalette(c("blue","white","red"))(100),
+#                 cluster_rows = F,
+#                 annotation_row = sample,
+#                 annotation_colors = color,
+#                 cluster_cols = F,
+#                 scale = "row",border_color = "NA",
+#                 gaps_row = separation_sequence,fontsize = 15
+#   )
+#   
+#   return(p)
+# }
+
+# #all markers from multiple references
+# #astrocytes
+# library(stringr)
+# library("plyr")
+# allmarkers<-read_xlsx("./all_markers.xlsx",sheet=1)
+# allmarkers<-as.data.frame(allmarkers)
+# allmarkers_14<-allmarkers[,c(1:7,9:15)]
+# #allmarkers<-allmarkers[1:34,]
+# #astrocyte_markers<-allmarkers$Astrocytes[!is.na(allmarkers$Astrocytes)]
+# #astrocyte_markers<-astrocyte_markers[-c(15:17)]
+# markers_f<-data.frame()
+# for(i in 1:ncol(allmarkers_14)){
+#   markers<-unique(str_to_title(as.character(na.omit(allmarkers_14[,i])))) 
+#   markers<-intersect(markers,rownames(temp))
+#   markers_df<-data.frame(value=markers,Celltype=rep(colnames(allmarkers_14)[i],length(markers)))
+#   markers_f<-rbind(markers_f,markers_df)
+# }
+# 
+# library(dplyr)
+# marker_astro<-rbind.fill(as.data.frame(astrocyte_markers),marker)
+# marker_astro<-marker_astro[,-2]
+# #all
+# for(i in 1:ncol(allmarkers)){
+#   marker_temp<-allmarkers[,i][!is.na(allmarkers[,i])]
+#   marker_temp<-unique(str_to_title(marker_temp)) 
+#   if(length(grep("\\\\",marker_temp))!=0){
+#     marker_temp<-marker_temp[-grep("\\\\",marker_temp)]
+#   }
+#   marker_temp<-marker_temp[,-i]
+#   allmarkers<-rbind.fill(as.data.frame(marker_temp),allmarkers)
+# }
+# markers_f<-unique(markers_f)
+# a<-annotation_heatmap(markers_f,temp)
