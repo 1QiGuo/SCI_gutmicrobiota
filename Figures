@@ -1,0 +1,298 @@
+library("qs")
+library("RColorBrewer")
+library("Seurat")
+library("readxl")
+library(reshape2) 
+library("pheatmap")
+library("ggsci")
+library("RColorBrewer")
+library(ggplot2)
+library(magrittr) 
+library(dplyr)
+library(plotly)
+temp3<-qread("/fs/ess/PCON0022/guoqi/microbe_sci/results/integrate/mit20/int_annotation_0614.qs")
+paired<-brewer.pal(n = 12, name = "Paired")
+paired[11]<-"#B09C85FF"
+my_cols<-c(paired,"#3C5488B2","#E6E606","#666666")
+temp3$celltype<-factor(temp3$celltype,levels = sort(unique(temp3$celltype)))
+cellannotation_3<-DimPlot(temp3, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+
+
+#markers
+setwd("/fs/ess/PCON0022/guoqi/microbe_sci/rawdata")
+marker <- read_excel("./gutmicro_markerlist_Nov29th.xlsx", sheet = 1)
+marker_f<-melt(marker[1:3,],measure.vars = colnames(marker),variable_name = "Celltype",value.name="marker")
+marker_f<-marker_f[c(1:39,43:45,40:42),]
+#check whether cluster 16 express neutrophils
+#VlnPlot(temp3, features =c("S100a9","S100a8","Retnlg"))
+Idents(temp3)<-temp3$celltype
+DefaultAssay(temp3)
+dot_ct_plate<-DotPlot(temp3,features = marker_f$marker)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),axis.text = element_text(size=20))+
+  scale_colour_gradient2(low = "#FF00FF", mid = "#000000", high = "#ffa500")
+dot_ct_plate<-DotPlot(temp3,features = marker_f$marker)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),axis.text = element_text(size=20))+
+  scale_colour_gradient2(low = "#800080",mid = "#000000", high = "#ffa500")
+
+#revise cluster 18 to monocyte
+temp4<-temp3
+temp4$celltype[which(temp4$clusters_f=="18")]<-"Monocytes"
+table(temp4$celltype)
+table(temp3$celltype)
+marker_f<-marker_f[c(1:39,43:45,40:42),]
+Idents(temp4)<-temp4$celltype
+DotPlot(temp4,features = marker_f$marker)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),axis.text = element_text(size=20))+
+  scale_colour_gradient(low = "#00008b", high = "#ffa500")+
+  geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) 
+#marker DCN, marker H2-Aa
+
+my_cols<-c(paired,"#3C5488B2","#CDCE2A","#666666")
+cellannotation_4<-DimPlot(temp4, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_draft5_Nov30.pdf",
+  width = 12,
+  height = 10,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+cellannotation_4
+# Closing the graphical device
+dev.off()
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_dotplot_Nov30.pdf",
+  width = 16.5,
+  height = 6,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+DotPlot(temp4,features = marker_f$marker)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),axis.text = element_text(size=15))+
+  scale_colour_gradient(low = "#00008b", high = "#ffa500")+
+  geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) 
+# Closing the graphical device
+dev.off()
+
+#double check cluster 18
+Idents(temp3)<-temp3$clusters_f
+annotation_heatmap<-function(marker_f,object,clusterorder){
+  library("Polychrome")
+  colnames(marker_f)<-c("Celltype","value")
+  marker_f<-marker_f[!is.na(marker_f$value),]
+  #compute average expression 
+  avg_data<-data.frame(rep(0,nrow(marker_f)))
+  DefaultAssay(object)<-"RNA"
+  for(i in sort(unique(Idents(object)))){
+    object_subset<-subset(object,idents=i)
+    df<-AverageExpression(object_subset, assays = "RNA",features = marker_f$value, slot = "data")
+    df<-as.data.frame(df$RNA)
+    avg_data<-cbind(avg_data,df)
+  }
+  avg_data<-avg_data[,-1]
+  colnames(avg_data)<-sort(unique(Idents(object)))
+  #create pheatmap data
+  marker_f$Celltype<-factor(marker_f$Celltype,levels = unique(marker_f$Celltype))
+  marker = data.frame(marker = marker_f$Celltype)
+  color = marker
+  levels(color) <- Polychrome::dark.colors(15)
+  color <- list(marker = levels(color))
+  names(color$marker)<- levels(marker$marker)
+  separation_sequence <- cumsum(table(marker_f$Celltype))
+  gaps_row = separation_sequence
+  p <- pheatmap(avg_data,
+                color = colorRampPalette(c("blue","white","red"))(100),
+                cluster_rows = F,
+                annotation_row = marker,
+                annotation_colors = color,
+                cluster_cols = F,
+                scale = "row",border_color = "NA",
+                gaps_row = separation_sequence,fontsize = 15,
+                annotation_names_row = F
+  )
+  # p <- pheatmap(avg_data[],
+  #               color = colorRampPalette(c("blue","white","red"))(100),
+  #               cluster_rows = F,
+  #               annotation_row = sample,
+  #               annotation_colors = color,
+  #               cluster_cols = F,
+  #               scale = "row",border_color = "NA",
+  #               gaps_row = separation_sequence,fontsize = 15
+  # )
+  
+  return(p)
+}
+
+a<-annotation_heatmap(marker_f,temp3)
+#annotation for cluster 18 should be b cells
+
+#----------Nov 30th
+cellannotation_4<-DimPlot(temp3, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_draft6_Nov30.pdf",
+  width = 12,
+  height = 10,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+cellannotation_4
+# Closing the graphical device
+dev.off()
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_dotplot2_Nov30.pdf",
+  width = 16.5,
+  height = 6,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+Idents(temp3)<-temp3$celltype
+DotPlot(temp3,features = marker_f$marker)+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),axis.text = element_text(size=15))+
+  scale_colour_gradient(low = "#00008b", high = "#ffa500")+
+  geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) 
+# Closing the graphical device
+dev.off()
+
+sci_colonization_cells<-colnames(temp3)
+timecondition_umap<-DimPlot(temp3, reduction = "umap", group.by = "timecondition",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+
+Idents(temp3)<-temp3$timecondition
+GF_naive<-subset(temp3,idents = "GF-naive")
+GF_naive_umap<-DimPlot(GF_naive, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+GF_SCI<-subset(temp3,idents = "GF-SCI")
+GF_SCI_umap<-DimPlot(GF_SCI, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+Colonized_naive<-subset(temp3,idents = "Colonized naive")
+my_cols_colonizednaive<-my_cols[-c(8,12)]
+Colonized_naive_umap<-DimPlot(Colonized_naive, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols_colonizednaive,pt.size=1.4)
+table(Colonized_naive$celltype)
+Colonized_sci<-subset(temp3,idents = "Colonized-SCI")
+Colonized_sci_umap<-DimPlot(Colonized_sci, reduction = "umap", group.by = "celltype",label = F,label.size = 6,cols = my_cols,pt.size=1.4)
+
+#barplot
+int_fla<-temp3
+cell.prop<-as.data.frame(prop.table(table(int_fla$celltype, int_fla$timecondition),2))
+colnames(cell.prop)<-c("cluster","Condition","Proportion")
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))+ 
+  theme(axis.text = element_text(size = 20),text = element_text(size = 20),
+        axis.text.x = element_text( size=20,angle = 30,vjust=1, hjust=1))   
+p=p+scale_fill_manual(values=my_cols)
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_barplot_Nov30.pdf",
+  width = 8,
+  height = 11,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+dev.off()
+
+#barplot_horianzantal
+p<-ggplot(cell.prop,aes(Condition,Proportion,fill=cluster))+
+  geom_bar(stat="identity",position="fill")+
+  ggtitle("")+
+  theme_bw()+
+  theme(axis.ticks.length=unit(0.5,'cm'))+
+  guides(fill=guide_legend(title=NULL))+ 
+  theme(axis.text = element_text(size = 23),text = element_text(size = 23),
+        axis.text.x = element_text( size=23,vjust=1, hjust=1))   
+p=p+scale_fill_manual(values=my_cols)+ coord_flip()
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_barplot2_Nov30.pdf",
+  width = 17,
+  height = 5,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+p
+dev.off()
+
+#pieplot
+meta <- int_fla@meta.data
+# pieplot<-function(meta,celltypename){
+#   pie_df <-
+#     meta %>%
+#     filter(celltype %in% celltypename)
+#   pie_df = data.frame(table(pie_df$timecondition))
+#   pie_df$Var1<-c("GF SC","Colonized SC","GF SCI","Colonized SCI")
+#   pie_df$Var1<-factor(pie_df$Var1,levels = c("GF SC","Colonized SC","GF SCI","Colonized SCI"))
+#   colors <- c('#00A087B2',"#4DBBD5B2",'#E64B35B2', '#DC0000B2')
+#   fig <-
+#     plot_ly(
+#       pie_df,
+#       labels = ~ Var1,
+#       values = ~ Freq,
+#       type = 'pie',
+#       marker = list(colors = colors, line = list(color = '#FFFFFF', width = 1)),
+#       insidetextfont = list(color = '#000000')
+#       #textinfo='label+percent'
+#     )%>%
+#     layout(
+#       xaxis = list(tickfont = list(size = 300)))
+#   # fig <-
+#   #   fig %>% layout(
+#   #     title = paste0('Proportional distribution of ',celltypename," across four conditions"),
+#   #     xaxis = list(
+#   #       showgrid = FALSE,
+#   #       zeroline = FALSE,
+#   #       showticklabels = FALSE
+#   #     ),
+#   #     yaxis = list(
+#   #       showgrid = FALSE,
+#   #       zeroline = FALSE,
+#   #       showticklabels = FALSE
+#   #     )
+#   #   )
+#   return(fig)
+# }
+# p<-pieplot(meta,"Microglia")
+# pdf(
+#   "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_pieplot_microglia_Nov30.pdf",
+#   width = 12,
+#   height = 10,
+#   bg = "white" ,
+#   colormodel = "cmyk"
+# )
+# p
+# dev.off()
+#can not output, so change another way
+# Basic piechart
+
+pieplot_function<-function(object,celltypename){
+  meta <- int_fla@meta.data
+  pie_df <-     meta %>%  filter(celltype %in% celltypename)
+  pie_df = data.frame(table(pie_df$timecondition))
+  colors <- c('#00A087B2',"#4DBBD5B2",'#E64B35B2', '#DC0000B2')
+  pie_df <- pie_df %>%
+    arrange(desc(Var1)) %>%
+    mutate(prop = Freq / sum(pie_df$Freq) *100) %>%
+    mutate(ypos = cumsum(prop)- 0.5*prop )
+  a<-ggplot(pie_df, aes(x="", y=Freq, fill=Var1)) +
+    geom_bar(stat="identity", width=1, color="black") +
+    coord_polar("y", start=0) +
+    theme_void()+
+    scale_fill_manual(values=colors)
+  return(a)
+}
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_pieplot_microglia_Nov30.pdf",
+  width = 12,
+  height = 10,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+a<-pieplot_function(int_fla,"Microglia")
+a
+dev.off()
+pdf(
+  "/fs/ess/PCON0022/guoqi/microbe_sci/results/annotation/version_Nov30/annotation_pieplot_neutrophil_Nov30.pdf",
+  width = 12,
+  height = 10,
+  bg = "white" ,
+  colormodel = "cmyk"
+)
+a<-pieplot_function(int_fla,"Neutrophils")
+a
+dev.off()
